@@ -185,26 +185,7 @@ class SentimentModel(nn.Module):
 
     return predictions.item()
     
-  def get_most_popular_tickers(self, data):
-      
-    data = data[data['text modified'] != 'none']
-    data = data[data['text modified'].str.len() > 1]
-    data['sentiment'] = data['text modified'].apply(self.get_sentiment)
-        
-    # Create new data by removing any rows that do not have a ticker
-    data_tickers = data.loc[data['tickers'].str.len() == 1]
-    
-    # Extract the tickers from data_tickers, making sure there are no duplicates, and create a new dataframe to hold them
-    tickers_sentiment = pd.DataFrame(columns=['ticker', 'sentiment', 'count'])
-    tickers_list = []
-    [tickers_list.append(ticker) for ticker in data_tickers['tickers'].to_list() if ticker not in tickers_list]
-    tickers_sentiment['ticker'] = tickers_list
-
-    tickers_sentiment[['sentiment', 'count']] = tickers_sentiment['ticker'].apply(lambda x: get_ticker_sent(data_tickers,
-                                                                                                            tickers_sentiment['ticker']))
-    tickers_sentiment = tickers_sentiment.sort_values(by='count', ascending=False)
-    tickers_sentiment = tickers_sentiment.reset_index(drop=True)
-    return tickers_sentiment
+  
 
 
 def train_model():
@@ -235,3 +216,22 @@ def save_model(model, name):
     T.save(model.state_dict(),name)
     
 
+def get_most_popular_tickers(model, data_tickers):
+      
+    data_tickers = data_tickers.loc[data_tickers['text modified'] != 'none']
+    data_tickers = data_tickers.loc[data_tickers['text modified'].str.len() > 1]
+    data_tickers['sentiment'] = data_tickers['text modified'].apply(model.get_sentiment)
+    print(data_tickers)
+    
+    # Extract the tickers from data_tickers, making sure there are no duplicates, and create a new dataframe to hold them
+    tickers_sentiment = pd.DataFrame(columns=['ticker', 'sentiment', 'count'])
+    tickers_list = []
+    [tickers_list.append(ticker) for ticker in data_tickers['tickers'].to_list() if ticker not in tickers_list]
+    tickers_sentiment['ticker'] = tickers_list
+
+    tickers_sentiment[['sentiment', 'count']] = tickers_sentiment['ticker'].apply(lambda x: get_ticker_sent(data_tickers,
+                                                                                                            x))
+    tickers_sentiment = tickers_sentiment.sort_values(by='count', ascending=False)
+    tickers_sentiment = tickers_sentiment.reset_index(drop=True)
+    tickers_sentiment.to_csv('data/most_popular_tickers.csv')
+    return tickers_sentiment
