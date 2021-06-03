@@ -1,7 +1,6 @@
 import praw
 import pandas as pd
 import re
-import nltk
 import spacy
 from nltk.stem.wordnet import WordNetLemmatizer
 
@@ -39,14 +38,16 @@ BLACKLIST = ['bleeding', 'itm', 'congrats', 'fda', 'cnbc', 'cathie', 'fidelity',
 # We will only get post/comments containing a word in query
 def get_reddit_data(my_username, my_password, num_submissions = 500, get_comments = True, query = [], save_to_csv = True, 
                     subreddit_list = ['Wallstreetbets', 'Stocks', 'Investing', 'StockMarket'],
-                    submissions_path = 'data/submissions.csv', comments_path = 'data/comments.csv'):
+                    submissions_path = 'data/submissions.csv', comments_path = 'data/comments.csv',
+                    my_clientsecret = 'qp3mJC41c4z4IG2UeJ_wZ2J2RdLlaQ', my_clientid = 'WX8tsO3brrseeA', 
+                    my_redditappname = 'Scanner'):
       
     # Setup reddit API
-    reddit = praw.Reddit(client_id='WX8tsO3brrseeA', 
-                       client_secret='qp3mJC41c4z4IG2UeJ_wZ2J2RdLlaQ', 
+    reddit = praw.Reddit(client_id=my_clientsecret, 
+                       client_secret=my_clientid, 
                        username=my_username,
                        password=my_password,
-                       user_agent='Scanner', 
+                       user_agent=my_redditappname, 
                        check_for_async=False)
     
     
@@ -96,9 +97,7 @@ def process_and_remove_text(s, stock_data = True):
      len(s) < 5 or\
      s == '[removed]' or\
      symbols.search(s) != None:
-    good_string = False
-  else:
-    good_string = True
+    return 'REMOVE'
 
   s = remove_special_char.sub(r'', s)
   if stock_data:
@@ -117,7 +116,7 @@ def process_and_remove_text(s, stock_data = True):
   s = [lemmatizer.lemmatize(w) for w in s.split()]
   s = ' '.join(s)
     
-  return s, good_string
+  return s
 
 # This will use a named entity recognition to pull out any entities. We then compare these entities 
 # to a blacklist, and if it is not in the blacklist, we call it a ticker!
@@ -128,9 +127,15 @@ def get_tickers(text):
   for ent in ents:
     if ent.label_ == "ORG" and not any(substring in ent.text.lower() for substring in BLACKLIST):
       list.append(ent.text.lower())
+  
+  if len(list) == 1:
+    keep = True
+    return list[0]
+    
+  return 'No ticker'
 
-  return list
-
+# This function is the interface to this file. It will load data or scan reddit, process the text, and then
+# pull out the stock ticker
 def get_processed_data(my_username, my_password, save_data=True, load_data=True, data_path='data/data.csv'):
     
     # Load the data from a file
@@ -153,16 +158,14 @@ def get_processed_data(my_username, my_password, save_data=True, load_data=True,
         print('Collected reddit data')
         
     # Data processing
-    data[['text modified', 'keep']] = data['text'].apply(lambda x: pd.Series(process_and_remove_text(x), 
-                                                                         index=['text modified', 'keep']))
-    data = data[data['keep'] == True]
-    data = data.reset_index(drop=True)
-    data = data.drop(labels=['keep'], axis=1)
+    data['text modified'] = data['text'].apply(process_and_remove_text)
+    data = data.loc[data['text modified'] != 'REMOVE']
     print('Done with processing data. Now to get those tickers!')
+    data = data.reset_index(drop=True)
 
     data['tickers'] = data['text'].apply(get_tickers)
-    data['tickers modified'] = data['text modified'].apply(get_tickers)
-    data = data[data['tickers'].str.len() == 1]
+    data = data[data['tickers'] != 'No ticker']
+    data = data.reset_index(drop=True)
     print('Done with the tickers now!')
     
     if save_data:

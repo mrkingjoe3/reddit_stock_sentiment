@@ -21,17 +21,8 @@ DEVICE = T.device("cuda:0" if T.cuda.is_available() else "cpu")
 MAX_LEN = 100
 TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-# A function to get the sentiment and count of any given ticker 
-# We will look in data_tickers for sentiment and count
-def get_ticker_sent(data, ticker):
-    # Create a dataframe with all the occurences of a ticker in data_tickers
-    data_ticker = data.loc[data['tickers'] == ticker]
-    count = len(data_ticker)
-    # Find the average sentiment of this ticker
-    average_sentiment = np.sum(data_ticker['sentiment'].to_numpy())/count
-    return pd.Series([average_sentiment, count])
 
-
+# A dataset class for formatting training and testing data to go into a pytorch model
 class CreateDataset(Dataset):
   def __init__(self, data, tokenizer=TOKENIZER,
                max_len=MAX_LEN):
@@ -61,7 +52,7 @@ class CreateDataset(Dataset):
       'labels': T.tensor(labels, dtype=T.long)
     }
     
-    
+# A data loader to interface to our dataset class
 def LoadData(data):
   ds = CreateDataset(data=data)
   return DataLoader(
@@ -71,7 +62,7 @@ def LoadData(data):
   )
   
   
-    
+# To get the training and testing data broken down into data loaders
 def get_data(PATH = 'training.1600000.processed.noemoticon.csv'):
     
   data = pd.read_csv(PATH, encoding ='latin', names = ['labels','id','date','query','user','text'])
@@ -82,7 +73,7 @@ def get_data(PATH = 'training.1600000.processed.noemoticon.csv'):
   return len(train), len(test), data_loader_train, data_loader_test
   
 
-  
+# This is a custom sentiment analysis model built from a base of a BERT transformer model
 class SentimentModel(nn.Module):
   
   def __init__(self, n_classes, len_data):
@@ -104,6 +95,7 @@ class SentimentModel(nn.Module):
                                                       num_warmup_steps=10,
                                                       num_training_steps=len_data*EPOCHS)
   
+  # Run a forward propagation step 
   def forward(self, input_ids, attention_mask):
     with T.no_grad():
       embedding, pooled = self.bert(
@@ -117,6 +109,7 @@ class SentimentModel(nn.Module):
     #Do we want this activation relu here?
     return X 
 
+  # Run one step with training data
   def train_step(self, d):
     input_ids = d['input_ids'].to(DEVICE)
     attention_mask = d['attention_mask'].to(DEVICE)
@@ -147,6 +140,7 @@ class SentimentModel(nn.Module):
 
     return correct_predictions
 
+  # Run one step with testing data
   def test_step(self, data):
     input_ids = data['input_ids'].to(DEVICE)
     attention_mask = data['attention_mask'].to(DEVICE)
@@ -158,6 +152,7 @@ class SentimentModel(nn.Module):
     correct_predictions = T.sum(predictions == labels).cpu().numpy()
     return correct_predictions
 
+  # Takes an input string of text and returns the sentiment of it
   def get_sentiment(self, text):
   
     encoding = TOKENIZER.encode_plus(
@@ -186,8 +181,7 @@ class SentimentModel(nn.Module):
     return predictions.item()
     
   
-
-
+# Get training and test data and then train the model for a given amount of epochs
 def train_model():
     len_train, len_test, data_loader_train, data_loader_test = get_data()
     model = SentimentModel(2, len_train).to(DEVICE)
@@ -207,31 +201,45 @@ def train_model():
         
     return model
 
+# Load a pretrained model
 def load_trained_model():
     model = SentimentModel(2, 0)
     model.load_state_dict(T.load('twitter_sentiment_model', map_location='cpu'), strict=False)
     return model
 
+# Save a model
 def save_model(model, name):
     T.save(model.state_dict(),name)
     
+# A function to get the sentiment and count of any given ticker in a list of data
+# We will look in data for sentiment and count
+def get_ticker_sent(data, ticker):
+    # Create a dataframe with all the occurences of a ticker in data
+    data_ticker = data.loc[data['tickers'] == ticker]
+    count = len(data_ticker)
+    # Find the average sentiment of this ticker
+    average_sentiment = np.sum(data_ticker['sentiment'].to_numpy())/count
+    return pd.Series([average_sentiment, count])
 
-def get_most_popular_tickers(model, data_tickers):
+# Get the sentiment for each entry of data. Then use get_tickers_sentiment to find the most popular
+# tickers
+def get_most_popular_tickers(model, data):
       
-    data_tickers = data_tickers.loc[data_tickers['text modified'] != 'none']
-    data_tickers = data_tickers.loc[data_tickers['text modified'].str.len() > 1]
-    data_tickers['sentiment'] = data_tickers['text modified'].apply(model.get_sentiment)
-    print(data_tickers)
+    data = data.loc[data['text modified'] != 'none']
+    data = data.loc[data['text modified'].str.len() > 1]
+    data['sentiment'] = data['text modified'].apply(model.get_sentiment)
+    print('Done with sentiment dectection!')
     
-    # Extract the tickers from data_tickers, making sure there are no duplicates, and create a new dataframe to hold them
+    # Extract the tickers from data, making sure there are no duplicates, and create a new dataframe to hold them
     tickers_sentiment = pd.DataFrame(columns=['ticker', 'sentiment', 'count'])
     tickers_list = []
-    [tickers_list.append(ticker) for ticker in data_tickers['tickers'].to_list() if ticker not in tickers_list]
+    [tickers_list.append(ticker) for ticker in data['tickers'].to_list() if ticker not in tickers_list]
     tickers_sentiment['ticker'] = tickers_list
 
-    tickers_sentiment[['sentiment', 'count']] = tickers_sentiment['ticker'].apply(lambda x: get_ticker_sent(data_tickers,
+    tickers_sentiment[['sentiment', 'count']] = tickers_sentiment['ticker'].apply(lambda x: get_ticker_sent(data,
                                                                                                             x))
     tickers_sentiment = tickers_sentiment.sort_values(by='count', ascending=False)
     tickers_sentiment = tickers_sentiment.reset_index(drop=True)
-    tickers_sentiment.to_csv('data/most_popular_tickers.csv')
+    tickers_sentiment.to_csv('data/most_popular_tickers.csv', index = False)
+    
     return tickers_sentiment
