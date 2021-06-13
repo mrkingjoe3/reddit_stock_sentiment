@@ -88,51 +88,49 @@ def get_reddit_data(my_username, my_password, num_submissions = 500, get_comment
 # Check for certain words and patterns and remove and/or replace them
 # There are some patterns where the whole entry will be disregarded
 def process_and_remove_text(s, stock_data = True):
+    # Convert to lower case
+    #s = s.lower()
+    # Remove any entries that are too long, have emojis, or are equal to [removed]
+    if len(s) > 100 or\
+        len(s) < 5 or\
+        s == '[removed]' or\
+        symbols.search(s) != None:
+        return 'REMOVE'
 
-  # Convert to lower case
-  #s = s.lower()
-
-  # Remove any entries that are too long, have emojis, or are equal to [removed]
-  if len(s) > 100 or\
-     len(s) < 5 or\
-     s == '[removed]' or\
-     symbols.search(s) != None:
-    return 'REMOVE'
-
-  s = remove_special_char.sub(r'', s)
-  if stock_data:
-    # Change common stock sentiment words to positive/ negative
-    s = bad_word.sub(r'bad ', s)
-    s = good_word.sub(r'good ', s)
-  # Change 't to 'not'
-  s = not_contractions.sub(" not", s)
-  # Remove any @user names
-  s = user_names.sub('', s)
-  # Remove any links
-  s = link.sub('', s)
-  # FUTURE UPDATE: remove stop words, or words that add no meaning
-  #s = " ".join([x for x in s.split() if x not in stopwords])
-  # Convert words to their base words, eg. running = run
-  s = [lemmatizer.lemmatize(w) for w in s.split()]
-  s = ' '.join(s)
+    s = remove_special_char.sub(r'', s)
+    if stock_data:
+        # Change common stock sentiment words to positive/ negative
+        s = bad_word.sub(r'bad ', s)
+        s = good_word.sub(r'good ', s)
+        # Change 't to 'not'
+    s = not_contractions.sub(" not", s)
+    # Remove any @user names
+    s = user_names.sub('', s)
+    # Remove any links
+    s = link.sub('', s)
+    # FUTURE UPDATE: remove stop words, or words that add no meaning
+    #s = " ".join([x for x in s.split() if x not in stopwords])
+    # Convert words to their base words, eg. running = run
+    s = [lemmatizer.lemmatize(w) for w in s.split()]
+    s = ' '.join(s)
     
-  return s
+    return s
 
 # This will use a named entity recognition to pull out any entities. We then compare these entities 
 # to a blacklist, and if it is not in the blacklist, we call it a ticker!
 def get_tickers(text):
-  list = []
-  ents = nlp(text).ents
+    list = []
+    ents = nlp(text).ents
 
-  for ent in ents:
-    if ent.label_ == "ORG" and not any(substring in ent.text.lower() for substring in BLACKLIST):
-      list.append(ent.text.lower())
+    for ent in ents:
+        if ent.label_ == "ORG" and not any(substring in ent.text.lower() for substring in BLACKLIST):
+            list.append(ent.text.lower())
   
-  if len(list) == 1:
-    keep = True
-    return list[0]
+    if len(list) == 1:
+        keep = True
+        return list[0]
     
-  return 'No ticker'
+    return 'No ticker'
 
 # This function is the interface to this file. It will load data or scan reddit, process the text, and then
 # pull out the stock ticker
